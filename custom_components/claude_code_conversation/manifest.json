@@ -1,0 +1,11 @@
+{
+  "domain": "claude_code_conversation",
+  "name": "Claude Code Conversation",
+  "codeowners": ["@Khronos31"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/Khronos31/claude-code-ha-conversation",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "version": "0.1.0"
+}

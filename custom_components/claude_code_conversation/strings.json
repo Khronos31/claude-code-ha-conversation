@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Claude Code Conversation",
+        "data": {
+          "server_url": "サーバーURL"
+        }
+      }
+    }
+  }
+}
