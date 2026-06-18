@@ -9,26 +9,35 @@ from homeassistant.components.conversation import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.helpers import intent
-from .const import CONF_SERVER_URL
+from .const import (
+    CONF_SERVER_URL,
+    CONF_MODEL, DEFAULT_MODEL,
+    CONF_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    async_add_entities([ClaudeCodeConversationEntity(entry)])
+    for subentry in entry.subentries.values():
+        if subentry.subentry_type != "conversation":
+            continue
+        async_add_entities(
+            [ClaudeCodeConversationEntity(entry, subentry)],
+            config_subentry_id=subentry.subentry_id,
+        )
 
 
 class ClaudeCodeConversationEntity(ConversationEntity):
-    _attr_has_entity_name = True
-    _attr_name = None
     _attr_supported_features = ConversationEntityFeature.CONTROL
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         self._entry = entry
-        self._attr_unique_id = entry.entry_id
-        self._attr_device_info = None
+        self._subentry_id = subentry.subentry_id
+        self._attr_unique_id = subentry.subentry_id
+        self._attr_name = subentry.title
 
     @property
     def supported_languages(self) -> list[str]:
@@ -36,10 +45,15 @@ class ClaudeCodeConversationEntity(ConversationEntity):
 
     async def _async_handle_message(self, user_input: ConversationInput, chat_log: ChatLog) -> ConversationResult:
         server_url = self._entry.data[CONF_SERVER_URL]
+        subentry = self._entry.subentries.get(self._subentry_id)
+        subentry_data = dict(subentry.data) if subentry else {}
+
         payload = {
             "text": user_input.text,
             "conversation_id": user_input.conversation_id,
             "language": user_input.language,
+            "model": subentry_data.get(CONF_MODEL, DEFAULT_MODEL),
+            "system_prompt": subentry_data.get(CONF_SYSTEM_PROMPT, DEFAULT_SYSTEM_PROMPT),
         }
 
         try:

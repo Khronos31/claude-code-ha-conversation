@@ -1,20 +1,31 @@
 #!/usr/bin/env python3
 import json
+import os
 import subprocess
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 SESSIONS_FILE = Path("/config/GitHub/claude-code-ha-conversation/sessions.json")
-ALLOWED_TOOLS = "WebSearch,WebFetch,Bash(ha-get-state *),Bash(ha-call-service *),Read"
+MCP_SERVER = Path("/config/GitHub/claude-code-ha-conversation/mcp_server.py")
+SESSION_TIMEOUT = 600  # 10分
 
-SYSTEM_PROMPT = """\
-あなたはスマートホームアシスタントです。ユーザーの音声コマンドに日本語で応答し、家電の操作や情報提供を行います。
+ALLOWED_TOOLS = "WebSearch,WebFetch,Read,mcp__ha__get_state,mcp__ha__call_service"
+MCP_CONFIG = json.dumps({
+    "mcpServers": {
+        "ha": {
+            "command": "python3",
+            "args": [str(MCP_SERVER)],
+        }
+    }
+})
 
-家電操作には ha-get-state と ha-call-service ツールを使ってください。
-天気や最新情報は WebSearch を使ってください。
-
-回答は音声で読み上げられるため、マークダウン記法は使わず、簡潔に答えてください。\
-"""
+DEFAULT_SYSTEM_PROMPT = (
+    "あなたはスマートホームアシスタントです。ユーザーの音声コマンドに日本語で応答し、家電の操作や情報提供を行います。\n"
+    "家電操作には get_state と call_service ツールを使ってください。\n"
+    "天気や最新情報は WebSearch を使ってください。\n"
+    "回答は音声で読み上げられるため、マークダウン記法は使わず、簡潔に答えてください。"
+)
 
 
 def load_sessions():
@@ -27,22 +38,34 @@ def save_sessions(sessions):
     SESSIONS_FILE.write_text(json.dumps(sessions))
 
 
-def call_claude(text, claude_session_id=None):
+def get_claude_session(sessions, conversation_id):
+    entry = sessions.get(conversation_id)
+    if not entry:
+        return None
+    if time.time() - entry.get("last_seen", 0) > SESSION_TIMEOUT:
+        return None
+    return entry.get("session_id")
+
+
+def call_claude(text, model, system_prompt, claude_session_id=None):
     cmd = [
         "claude", "-p",
+        "--model", model,
         "--output-format", "json",
         "--allowedTools", ALLOWED_TOOLS,
+        "--mcp-config", MCP_CONFIG,
         "--permission-mode", "dontAsk",
     ]
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
     else:
-        cmd += ["--system-prompt", SYSTEM_PROMPT]
+        cmd += ["--system-prompt", system_prompt]
     cmd.append(text)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    env = {**os.environ, "PATH": "/config/.tools/bin:/config/.tools/node/bin:/config/.tools/npm-global/bin:/usr/local/bin:/usr/bin:/bin"}
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180, env=env)
     if result.returncode != 0:
-        raise RuntimeError(result.stderr)
+        raise RuntimeError(f"rc={result.returncode} stderr={result.stderr!r} stdout={result.stdout!r}")
 
     data = json.loads(result.stdout)
     return data["result"], data["session_id"]
@@ -59,16 +82,23 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length))
         text = body.get("text", "")
         conversation_id = body.get("conversation_id") or "default"
+        model = body.get("model", "sonnet")
+        system_prompt = body.get("system_prompt", DEFAULT_SYSTEM_PROMPT)
 
         sessions = load_sessions()
-        claude_session_id = sessions.get(conversation_id)
+        claude_session_id = get_claude_session(sessions, conversation_id)
 
         try:
-            response_text, new_session_id = call_claude(text, claude_session_id)
-            sessions[conversation_id] = new_session_id
+            response_text, new_session_id = call_claude(text, model, system_prompt, claude_session_id)
+            sessions[conversation_id] = {
+                "session_id": new_session_id,
+                "last_seen": time.time(),
+            }
             save_sessions(sessions)
         except Exception as e:
             print(f"[error] {e}")
+            sessions.pop(conversation_id, None)
+            save_sessions(sessions)
             response_text = "すみません、エラーが発生しました。"
 
         payload = json.dumps({
