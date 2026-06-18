@@ -1,0 +1,11 @@
+#!/bin/sh
+# Usage: ha-get-state [entity_id]
+# entity_idを省略すると全エンティティ一覧を返す
+if [ -z "$1" ]; then
+    curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+        http://supervisor/core/api/states \
+        | jq '[.[] | {entity_id, state, attributes}]'
+else
+    curl -s -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+        "http://supervisor/core/api/states/$1"
+fi
