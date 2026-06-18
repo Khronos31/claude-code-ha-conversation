@@ -27,6 +27,50 @@ DEFAULT_SYSTEM_PROMPT = (
     "回答は音声で読み上げられるため、マークダウン記法は使わず、簡潔に答えてください。"
 )
 
+# エンティティ対応表：システムプロンプトに自動付加してツール呼び出しを省く
+ENTITY_KNOWLEDGE = """
+## 家のエンティティ一覧
+
+### ライト
+- リビングのライト: light.light_living
+- スタディのライト: light.sutateinoraito_2
+- キッズルームのライト: light.kitusurumunoraito
+- 廊下のライト: light.lang_xia_noraito1 / light.lang_xia_noraito2
+- トイレのライト: light.toirenoraito
+- 洗面所のライト: light.xi_mian_suo_noraito
+- 物置きのライト: light.wu_zhi_kinoraito_2
+- 台所のライト: switch.bot_bbe9
+- ベッドルームのライト: switch.hetutorumunoraito
+
+### エアコン
+- スタディのエアコン: climate.sutateinoeakon_2
+- ベッドルームのエアコン: climate.hetutorumunoeakon
+- キッズルームのエアコン: climate.kitusurumunoeakon
+- リビングのヒーター: climate.heater_living
+
+### テレビ・映像
+- スタディのテレビ: media_player.google_tv_streamer
+- スタディのレコーダー: media_player.recorder_study
+- リビングのテレビ: media_player.rihinkunoterehi_2（AndroidTV）/ remote.rihinkunoterehi（IRリモコン）
+- Nintendo Switch: remote.nintendo_switch
+
+### その他
+- スタディのカーテン: cover.sutateinokaten_2
+- スタディの加湿器: switch.sutateinojia_shi_qi
+- リビングのカメラ: switch.rihinkunokamera
+- HOME-PC: switch.home_pc
+- 台所のポット: switch.tai_suo_nohotuto_2
+- 洗面台のプラグ: switch.xi_mian_tai_nohuraku
+
+### スクリプト
+- おやすみ: script.goodnight
+- 視聴予約: script.viewing_reservation_set
+- 視聴予約取り消し: script.viewing_reservation_cancel
+- チャンネル切替: script.recorder_show_channel
+
+entity_idがわかっている場合はget_stateを使わずcall_serviceを直接呼び出してください。
+"""
+
 
 def load_sessions():
     if SESSIONS_FILE.exists():
@@ -59,7 +103,7 @@ def call_claude(text, model, system_prompt, claude_session_id=None):
     if claude_session_id:
         cmd += ["--resume", claude_session_id]
     else:
-        cmd += ["--system-prompt", system_prompt]
+        cmd += ["--system-prompt", system_prompt + ENTITY_KNOWLEDGE]
     cmd.append(text)
 
     env = {**os.environ, "PATH": "/config/.tools/bin:/config/.tools/node/bin:/config/.tools/npm-global/bin:/usr/local/bin:/usr/bin:/bin"}
